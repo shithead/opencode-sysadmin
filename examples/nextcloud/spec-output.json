@@ -1,0 +1,110 @@
+{
+  "programm": "nextcloud",
+  "version": "31.0.2",
+  "image": "nextcloud:31.0.2-apache",
+  "image_arch": "x86_64",
+  "ports": [
+    {
+      "internal": 80,
+      "external": null,
+      "protocol": "tcp",
+      "description": "HTTP (Apache) – geroutet über Traefik"
+    }
+  ],
+  "volumes": [
+    {
+      "path": "/var/www/html",
+      "type": "persistent",
+      "name": "nextcloud-html",
+      "uid": 33,
+      "gid": 33,
+      "readonly": false
+    },
+    {
+      "path": "/var/www/html/config",
+      "type": "config",
+      "name": "nextcloud-config",
+      "uid": 33,
+      "gid": 33,
+      "readonly": false
+    },
+    {
+      "path": "/var/www/html/custom_apps",
+      "type": "persistent",
+      "name": "nextcloud-apps",
+      "uid": 33,
+      "gid": 33,
+      "readonly": false
+    }
+  ],
+  "dependencies": [
+    {
+      "service": "postgresql",
+      "version": "16",
+      "image": "postgres:16.6-alpine",
+      "reason": "Primäre Datenbank für Nextcloud (Metadaten, Shares, Kalender, etc.)",
+      "database": "nextcloud",
+      "user": "nextcloud"
+    },
+    {
+      "service": "redis",
+      "version": "7",
+      "image": "redis:7.4-alpine",
+      "reason": "Caching und File-Locking für Nextcloud (empfohlen für Produktionsumgebungen)"
+    }
+  ],
+  "healthcheck": {
+    "type": "http",
+    "path": "/status.php",
+    "interval": "30s",
+    "timeout": "10s",
+    "retries": 3
+  },
+  "routing": {
+    "host": "cloud.example.com",
+    "target_port": 80,
+    "tls": true,
+    "websocket": true,
+    "http2": true,
+    "required_headers": [
+      "X-Forwarded-For",
+      "X-Forwarded-Proto",
+      "X-Forwarded-Host"
+    ],
+    "oidc": {
+      "provider": "keycloak",
+      "issuer": "https://auth.example.com/realms/master",
+      "redirect_uri": "https://cloud.example.com/apps/sociallogin/custom_oidc/redirect",
+      "client_id_ref": "OIDC_CLIENT_ID"
+    }
+  },
+  "secrets_refs": [
+    "DB_PASSWORD",
+    "NEXTCLOUD_ADMIN_USER",
+    "NEXTCLOUD_ADMIN_PASSWORD",
+    "OIDC_CLIENT_ID",
+    "OIDC_CLIENT_SECRET",
+    "REDIS_PASSWORD"
+  ],
+  "resources": {
+    "cpu_limit": "2",
+    "cpu_request": "1",
+    "mem_limit": "1Gi",
+    "mem_request": "512Mi"
+  },
+  "restart_policy": "unless-stopped",
+  "assumptions": [
+    "Nextcloud 31.0.2 (Hub 9) als aktuellste stabile Version angenommen",
+    "Apache-Image-Variante gewählt (exposed Port 80), da Traefik direkt HTTP routet und kein separater Webserver nötig ist",
+    "PostgreSQL 16.6 als Datenbank, da im Input db_type=postgres spezifiziert",
+    "Redis 7.4 für Caching und File-Locking (Nextcloud-Empfehlung für Produktionsumgebungen)",
+    "Externe Ports auf null gesetzt, da Traefik als Frontdoor alle Requests routet",
+    "UID/GID 33:33 entspricht www-data im Container (Standard-Nextcloud-User)",
+    "OIDC-Issuer auf Default-Keycloak-Realm 'master' gesetzt (kann bei Bedarf angepasst werden)",
+    "OIDC-Redirect-URI verwendet den Standard-Pfad des Nextcloud Social-Login/OIDC-Plugins",
+    "Kein separater Cron-Container definiert; Cron-Jobs laufen im Hauptcontainer (Apache-Image enthält Cron)",
+    "Ressourcen: 1-2 CPUs, 512Mi-1Gi RAM basierend auf Nextcloud-Dokumentation für mittlere Instanzen",
+    "Redis-Passwort als optionales Secret gelistet (empfohlen für abgesicherte Umgebungen)",
+    "custom_apps-Volume nicht read-only, da Apps auch zur Laufzeit installiert/aktualisiert werden können"
+  ]
+}

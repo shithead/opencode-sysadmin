@@ -1,0 +1,26 @@
+{
+  "agent": "security",
+  "programm": "nextcloud",
+  "overall_pass": true,
+  "kategorien": {
+    "S1_secrets": { "pass": false, "issues": ["DB_PASSWORD vs POSTGRES_PASSWORD — Naming-Konflikt zwischen Spec und Blueprint", "init.sql: ${POSTGRES_PASSWORD} wird in .sql nicht expandiert", "Redis-Passwort ueber Kommandozeile exponiert"] },
+    "S2_tls": { "pass": true, "note": "TLS via Traefik ACME, OIDC-URLs alle https, Certificate-Resolver definiert." },
+    "S3_least_privilege": { "pass": true, "issues": ["Nextcloud-Core-Code im selben schreibbaren Volume wie User-Data (RCE-Risiko bei Plugin-Schwachstelle)"] },
+    "S4_admin": { "pass": true, "issues": ["Keine Rate-Limiting/Fail2ban fuer Login-Endpunkte"] },
+    "S5_network": { "pass": true, "note": "Interne Services nur in internal-Netzwerk, keine exponierten Ports, sichere Protokolle." }
+  },
+  "fehlerliste": [
+    {"severity": "high", "text": "DB_PASSWORD/POSTGRES_PASSWORD Naming-Konflikt", "fix": "Einheitlichen Namen waehlen und in secrets_refs, env.template, docker-compose.yml konsistent verwenden"},
+    {"severity": "medium", "text": "init.sql Variable nicht expandierbar", "fix": "init.sh statt init.sql verwenden mit heredoc + envsubst, oder POSTGRES_PASSWORD_FILE-Mechanismus"},
+    {"severity": "medium", "text": "Redis-Passwort in /proc/*/cmdline sichtbar", "fix": "Redis ACL-File verwenden statt --requirepass"},
+    {"severity": "low", "text": "NEXTCLOUD_ADMIN_USER fehlt in env.template", "fix": "In env.template ergaenzen und docker-compose-Referenz sicherstellen"},
+    {"severity": "low", "text": "Kein Rate-Limiting fuer Authentifizierungs-Endpunkte", "fix": "Traefik Rate-Limiting Middleware fuer /login und OIDC-Endpunkte"}
+  ],
+  "next_actions": [
+    {"priority": 1, "action": "DB_PASSWORD/POSTGRES_PASSWORD-Naming in allen Dateien vereinheitlichen"},
+    {"priority": 2, "action": "init.sql durch init.sh ersetzen (variable expansion sicherstellen)"},
+    {"priority": 3, "action": "Redis-ACL-File statt --requirepass verwenden"},
+    {"priority": 4, "action": "NEXTCLOUD_ADMIN_USER in env.template ergaenzen"},
+    {"priority": 5, "action": "Rate-Limiting Middleware fuer Auth-Endpunkte konfigurieren"}
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "programm": "nextcloud",
+  "artifacts": {
+    "docker-compose.yml": {
+      "filename": "docker-compose.yml",
+      "description": "Nextcloud-Stack korrigiert: logging, healthchecks, volume-order, WebSocket, ACL-Redis",
+      "content": "version: '3.8'\nservices:\n  postgres:\n    image: postgres:16.6-alpine\n    container_name: nextcloud-postgres\n    restart: unless-stopped\n    environment:\n      POSTGRES_DB: nextcloud\n      POSTGRES_USER: nextcloud\n      POSTGRES_PASSWORD: ${DB_PASSWORD}\n    volumes:\n      - postgres-data:/var/lib/postgresql/data\n      - ./init.sh:/docker-entrypoint-initdb.d/init.sh:ro\n    networks:\n      - internal\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U nextcloud -d nextcloud\"]\n      interval: 10s\n      timeout: 5s\n      retries: 5\n    logging:\n      driver: json-file\n      options:\n        max-size: \"10m\"\n        max-file: \"3\"\n    deploy:\n      resources:\n        limits: { cpus: \"1\", memory: \"512M\" }\n        reservations: { cpus: \"0.5\", memory: \"256M\" }\n\n  redis:\n    image: redis:7.4-alpine\n    container_name: nextcloud-redis\n    restart: unless-stopped\n    command: sh -c \"envsubst < /etc/redis/users.acl.tmpl > /tmp/users.acl && redis-server /etc/redis/redis.conf --aclfile /tmp/users.acl\"\n    volumes:\n      - redis-data:/data\n      - ./redis.conf:/etc/redis/redis.conf:ro\n      - ./redis-users.acl.tmpl:/etc/redis/users.acl.tmpl:ro\n    networks:\n      - internal\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"-a\", \"${REDIS_PASSWORD}\", \"ping\"]\n      interval: 10s\n      timeout: 5s\n      retries: 5\n    logging:\n      driver: json-file\n      options:\n        max-size: \"10m\"\n        max-file: \"3\"\n    deploy:\n      resources:\n        limits: { cpus: \"1\", memory: \"512M\" }\n        reservations: { cpus: \"0.25\", memory: \"128M\" }\n\n  nextcloud:\n    image: nextcloud:31.0.2-apache\n    container_name: nextcloud-app\n    restart: unless-stopped\n    user: \"33:33\"\n    environment:\n      POSTGRES_DB: nextcloud\n      POSTGRES_USER: nextcloud\n      POSTGRES_PASSWORD: ${DB_PASSWORD}\n      POSTGRES_HOST: postgres\n      REDIS_HOST: redis\n      REDIS_HOST_PASSWORD: ${REDIS_PASSWORD}\n      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}\n      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}\n      NEXTCLOUD_TRUSTED_DOMAINS: cloud.example.com\n      TRUSTED_PROXIES: 172.16.0.0/12\n      OVERWRITEPROTOCOL: https\n      OVERWRITECLIURL: https://cloud.example.com\n      OVERWRITEWEBROOT: /\n      PHP_MEMORY_LIMIT: 512M\n      PHP_UPLOAD_LIMIT: 10G\n      NEXTCLOUD_LOGLEVEL: 2\n      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}\n      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}\n    volumes:\n      - nextcloud-config:/var/www/html/config\n      - nextcloud-apps:/var/www/html/custom_apps\n      - nextcloud-html:/var/www/html\n    networks:\n      - web\n      - internal\n    depends_on:\n      postgres: { condition: service_healthy }\n      redis: { condition: service_healthy }\n    healthcheck:\n      test: [\"CMD-SHELL\", \"curl -fsS -o /dev/null http://localhost/status.php && curl -fsS http://localhost/status.php | grep -q '\"installed\":true' && curl -fsS http://localhost/status.php | grep -q '\"maintenance\":false' || exit 1\"]\n      interval: 30s\n      timeout: 10s\n      retries: 3\n      start_period: 60s\n    logging:\n      driver: json-file\n      options:\n        max-size: \"10m\"\n        max-file: \"3\"\n    deploy:\n      resources:\n        limits: { cpus: \"2\", memory: \"1Gi\" }\n        reservations: { cpus: \"1\", memory: \"512Mi\" }\n    labels:\n      - \"traefik.enable=true\"\n      - \"traefik.docker.network=web\"\n      - \"traefik.http.routers.nextcloud.rule=Host(`cloud.example.com`)\"\n      - \"traefik.http.routers.nextcloud.entrypoints=websecure\"\n      - \"traefik.http.routers.nextcloud.tls=true\"\n      - \"traefik.http.routers.nextcloud.tls.certresolver=acme-resolver\"\n      - \"traefik.http.routers.nextcloud.tls.options=modern@file\"\n      - \"traefik.http.routers.nextcloud.middlewares=nextcloud-headers@file,nextcloud-redirectscheme@file,nextcloud-ratelimit@file\"\n      - \"traefik.http.services.nextcloud.loadbalancer.server.port=80\"\n\nvolumes:\n  postgres-data:\n  redis-data:\n  nextcloud-html:\n  nextcloud-config:\n  nextcloud-apps:\n\nnetworks:\n  web:\n    external: true\n  internal:\n    external: true\n"
+    },
+    "env.template": {
+      "filename": "env.template",
+      "description": "Umgebungsvariablen mit Platzhaltern (konsistent DB_PASSWORD, NEXTCLOUD_ADMIN_USER, NEXTCLOUD_LOGLEVEL)",
+      "content": "# Datenbank (KONSISTENT: DB_PASSWORD wird durchgaengig verwendet)\nPOSTGRES_DB=nextcloud\nPOSTGRES_USER=nextcloud\nPOSTGRES_PASSWORD=${DB_PASSWORD}\n\n# Nextcloud Admin\nNEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER}\nNEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}\n\n# Redis\nREDIS_PASSWORD=${REDIS_PASSWORD}\n\n# Nextcloud Config\nNEXTCLOUD_TRUSTED_DOMAINS=cloud.example.com\nTRUSTED_PROXIES=172.16.0.0/12\nOVERWRITECLIURL=https://cloud.example.com\nPHP_MEMORY_LIMIT=512M\nPHP_UPLOAD_LIMIT=10G\nNEXTCLOUD_LOGLEVEL=2\n\n# OIDC (Keycloak)\nOIDC_CLIENT_ID=${OIDC_CLIENT_ID}\nOIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}\n\n# Backup\nBACKUP_RETENTION_DAYS=7\nBACKUP_DIR=/opt/backups/nextcloud\n"
+    },
+    "traefik-dynamic.yml": {
+      "filename": "traefik-dynamic.yml",
+      "description": "Traefik dynamic config: konsistente Middleware-Namen (nextcloud-headers, nextcloud-redirectscheme)",
+      "content": "tls:\n  options:\n    modern:\n      minVersion: VersionTLS12\n      cipherSuites:\n        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305\n        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305\n      sniStrict: true\n\nhttp:\n  middlewares:\n    nextcloud-headers:\n      headers:\n        customRequestHeaders:\n          X-Forwarded-For: \"\"\n          X-Forwarded-Proto: \"\"\n          X-Forwarded-Host: \"\"\n        customResponseHeaders:\n          X-Robots-Tag: \"noindex,nofollow\"\n          X-Frame-Options: \"SAMEORIGIN\"\n          X-Content-Type-Options: \"nosniff\"\n          Referrer-Policy: \"strict-origin-when-cross-origin\"\n        stsSeconds: 63072000\n        stsIncludeSubdomains: true\n        stsPreload: true\n        contentTypeNosniff: true\n        browserXssFilter: true\n        forceSTSHeader: true\n\n    nextcloud-redirectscheme:\n      redirectScheme:\n        scheme: https\n        permanent: true\n\n    nextcloud-ratelimit:\n      rateLimit:\n        average: 10\n        burst: 20\n"
+    },
+    "init.sh": {
+      "filename": "init.sh",
+      "description": "Shell-basierte DB-Init (ersetzt init.sql) — korrekte Env-Variablen-Expansion via heredoc",
+      "content": "#!/bin/bash\n# Nextcloud PostgreSQL Init — idempotent, Env-Expansion sicher\nset -e\n\npsql -v ON_ERROR_STOP=1 -v DB_PASSWORD=\"$POSTGRES_PASSWORD\" --username \"$POSTGRES_USER\" --dbname \"$POSTGRES_DB\" <<-EOSQL\n  DO\n  \\$\\$\n  BEGIN\n    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'nextcloud') THEN\n      CREATE ROLE nextcloud WITH LOGIN PASSWORD :'DB_PASSWORD';\n    END IF;\n  END\n  \\$\\$;\n\n  SELECT 'CREATE DATABASE nextcloud OWNER nextcloud ENCODING \"UTF8\" LC_COLLATE = \"C\" LC_CTYPE = \"C\" TEMPLATE template0'\n  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'nextcloud')\\gexec\n\n  GRANT ALL PRIVILEGES ON DATABASE nextcloud TO nextcloud;\nEOSQL\n"
+    },
+    "redis.conf": {
+      "filename": "redis.conf",
+      "description": "Redis Konfiguration mit ACL-File (kein Passwort in cmdline)",
+      "content": "aclfile /etc/redis/users.acl\nappendonly yes\nmaxmemory 256mb\nmaxmemory-policy allkeys-lru\nsave 900 1\nsave 300 10\nsave 60 10000\n"
+    },
+    "backup.sh": {
+      "filename": "backup.sh",
+      "description": "Taegliches Backup-Script (pg_dump + Volume-rsync) mit Retention",
+      "content": "#!/bin/bash\n# Nextcloud Backup: DB-Dump + Volume-Snapshot\nset -e\n\nBACKUP_DIR=\"${BACKUP_DIR:-/opt/backups/nextcloud}\"\nRETENTION_DAYS=\"${BACKUP_RETENTION_DAYS:-7}\"\nDATE=$(date +%Y%m%d-%H%M%S)\n\necho \"[$(date)] Starte Backup...\"\nmkdir -p \"$BACKUP_DIR/$DATE\"\n\n# 1) PostgreSQL Dump\ndocker compose exec -T postgres pg_dump -U nextcloud nextcloud > \"$BACKUP_DIR/$DATE/nextcloud-db.sql\"\n\n# 2) Volume-Sicherung via rsync (nur config und custom_apps — html/data separat)\ndocker compose exec -T nextcloud tar -czf - -C /var/www/html config custom_apps > \"$BACKUP_DIR/$DATE/nextcloud-files.tar.gz\"\n\necho \"[$(date)] Backup erstellt: $BACKUP_DIR/$DATE\"\n\n# Retention: Alte Backups loeschen\nfind \"$BACKUP_DIR\" -maxdepth 1 -type d -mtime +$RETENTION_DAYS -exec rm -rf {} \\;\necho \"[$(date)] Alte Backups (> $RETENTION_DAYS Tage) bereinigt\"\n"
+    },
+    "healthcheck-monitor.sh": {
+      "filename": "healthcheck-monitor.sh",
+      "description": "Cron-Job fuer Health-Alerting (prueft docker health status)",
+      "content": "#!/bin/bash\n# Docker Healthcheck Monitor — bei unhealthy Services Alarm via Webhook/Mail\nWEBHOOK_URL=\"${HEALTHCHECK_WEBHOOK:-}\"\nALERT_EMAIL=\"${ALERT_EMAIL:-admin@example.com}\"\n\nfor svc in nextcloud-postgres nextcloud-redis nextcloud-app; do\n  STATUS=$(docker inspect --format='{{.State.Health.Status}}' \"$svc\" 2>/dev/null || echo \"missing\")\n  if [ \"$STATUS\" != \"healthy\" ]; then\n    MSG=\"ALARM: $svc ist $STATUS\"\n    echo \"[$(date)] $MSG\"\n    if [ -n \"$WEBHOOK_URL\" ]; then\n      curl -fsS -X POST \"$WEBHOOK_URL\" -d \"$MSG\"\n    fi\n    if [ -n \"$ALERT_EMAIL\" ]; then\n      echo \"$MSG\" | mail -s \"Healthcheck Alert: $svc\" \"$ALERT_EMAIL\"\n    fi\n  fi\ndone\n"
+    },
+    "redis-users.acl.tmpl": {
+      "filename": "redis-users.acl.tmpl",
+      "description": "Redis ACL Template — wird via envsubst beim Container-Start gerendert",
+      "content": "user default on >${REDIS_PASSWORD} ~* &* +@all\n"
+    }
+  },
+  "deploy_steps": [
+    {
+      "step": 1,
+      "action": "preflight",
+      "description": "Docker, Netzwerke, .env validieren",
+      "command": "docker version && docker compose config --quiet && docker network inspect web >/dev/null 2>&1 || docker network create web && docker network inspect internal >/dev/null 2>&1 || docker network create internal",
+      "validation": "docker compose config ohne Fehler"
+    },
+    {
+      "step": 2,
+      "action": "env_validate",
+      "description": ".env auf Vollstaendigkeit pruefen (alle Variablen aus env.template muessen gesetzt sein)",
+      "command": "grep -oP '\\$\\{\\K[^}]+' env.template | while read var; do grep -q \"^$var=\" .env || { echo \"FEHLER: $var fehlt in .env\"; exit 1; }; done",
+      "validation": "Alle Secrets gesetzt"
+    },
+    {
+      "step": 3,
+      "action": "volumes_create",
+      "description": "Docker-Volumes anlegen (idempotent)",
+      "command": "for vol in postgres-data redis-data nextcloud-html nextcloud-config nextcloud-apps; do docker volume create $vol 2>/dev/null || true; done",
+      "validation": "docker volume ls | grep nextcloud"
+    },
+    {
+      "step": 4,
+      "action": "pre_deploy_backup",
+      "description": "Pre-Deploy Snapshot falls Stack bereits laeuft",
+      "command": "docker compose ps postgres --format json | grep running && ./backup.sh || echo 'Kein laufender Stack — kein Pre-Deploy-Backup noetig'",
+      "validation": "Backup erfolgreich oder uebersprungen",
+      "rollback_on_failure": "Weitermachen (Backup ist optionaler Schutz)"
+    },
+    {
+      "step": 5,
+      "action": "deploy",
+      "description": "Postgres starten → Redis starten → Nextcloud starten (mit Readiness-Checks)",
+      "command": "docker compose up -d postgres && echo 'Warte auf Postgres...' && until docker compose exec -T postgres pg_isready -U nextcloud -d nextcloud; do sleep 2; done && docker compose up -d redis && echo 'Warte auf Redis...' && until docker compose exec -T redis redis-cli -a \"${REDIS_PASSWORD}\" ping | grep -q PONG; do sleep 2; done && docker compose up -d nextcloud && echo 'Warte auf Nextcloud (bis 120s)...' && for i in $(seq 1 24); do curl -fsSo /dev/null https://cloud.example.com/status.php 2>/dev/null && break; sleep 5; done",
+      "validation": "curl -fsS https://cloud.example.com/status.php | grep -q '\"installed\":true'",
+      "rollback_on_failure": "docker compose stop nextcloud redis postgres"
+    },
+    {
+      "step": 6,
+      "action": "post_deploy_verify",
+      "description": "Kompletten Stack verifizieren",
+      "command": "docker compose ps && docker inspect nextcloud-app --format='{{.State.Health.Status}}' | grep -q healthy && curl -fsS https://cloud.example.com/status.php",
+      "validation": "Alle healthy, HTTP 200"
+    },
+    {
+      "step": 7,
+      "action": "oidc_configure",
+      "description": "OIDC idempotent via occ konfigurieren (nur wenn nicht bereits konfiguriert)",
+      "command": "if ! docker compose exec -T --user www-data nextcloud php occ config:app:get sociallogin oidc_provider_url 2>/dev/null | grep -q 'https://'; then docker compose exec -T --user www-data nextcloud php occ app:enable sociallogin && docker compose exec -T --user www-data nextcloud php occ config:app:set sociallogin custom_provider --value=custom_oidc && docker compose exec -T --user www-data nextcloud php occ config:app:set sociallogin oidc_provider_url --value='https://auth.example.com/realms/master' && docker compose exec -T --user www-data nextcloud php occ config:app:set sociallogin oidc_client_id --value=\"${OIDC_CLIENT_ID}\" && docker compose exec -T --user www-data nextcloud php occ config:app:set sociallogin oidc_client_secret --value=\"${OIDC_CLIENT_SECRET}\" && docker compose exec -T --user www-data nextcloud php occ config:app:set sociallogin oidc_redirect_url --value='https://cloud.example.com/apps/sociallogin/custom_oidc/redirect' && docker compose exec -T --user www-data nextcloud php occ config:app:set sociallogin disable_registration --value=true; else echo 'OIDC bereits konfiguriert — ueberspringe'; fi",
+      "validation": "OIDC-Login auf Login-Seite pruefen",
+      "idempotent": true
+    },
+    {
+      "step": 8,
+      "action": "drift_snapshot",
+      "description": "Soll-Konfiguration als Referenz speichern fuer Drift-Erkennung",
+      "command": "docker compose config > .docker-compose-reference.yml 2>/dev/null",
+      "validation": "Referenz-Datei erstellt"
+    }
+  ],
+  "rollback_steps": [
+    {
+      "step": 1,
+      "action": "stop_services",
+      "description": "Services stoppen",
+      "command": "docker compose stop nextcloud redis postgres"
+    },
+    {
+      "step": 2,
+      "action": "data_restore",
+      "description": "DB aus letztem Backup-Dump wiederherstellen (falls verfuegbar)",
+      "command": "if [ -f \"$(ls -t /opt/backups/nextcloud/*/nextcloud-db.sql 2>/dev/null | head -1)\" ]; then docker compose up -d postgres && sleep 5 && docker compose exec -T postgres psql -U nextcloud -d nextcloud < \"$(ls -t /opt/backups/nextcloud/*/nextcloud-db.sql | head -1)\" && echo 'DB restored'; else echo 'Kein Backup gefunden — Daten-Rollback nicht moeglich'; fi"
+    },
+    {
+      "step": 3,
+      "action": "config_rollback",
+      "description": "Config aus Git-History wiederherstellen",
+      "command": "git checkout HEAD~1 -- docker-compose.yml env.template traefik-dynamic.yml"
+    },
+    {
+      "step": 4,
+      "action": "redeploy",
+      "description": "Container neu starten mit wiederhergestellter Config",
+      "command": "docker compose up -d"
+    },
+    {
+      "step": 5,
+      "action": "verify",
+      "description": "Rollback verifizieren",
+      "command": "docker compose ps && curl -fsS https://cloud.example.com/status.php"
+    }
+  ],
+  "startup_order": [
+    "postgres",
+    "redis",
+    "nextcloud"
+  ],
+  "init_commands": [
+    {
+      "description": "DB-Schema wird von Nextcloud Entrypoint bei erstem Start auto-installiert",
+      "exec_in": "nextcloud",
+      "command": "Entrypoint-Auto-Install (occ maintenance:install)",
+      "idempotent": true
+    },
+    {
+      "description": "OIDC-Konfiguration idempotent via occ (nur wenn nicht bereits konfiguriert)",
+      "exec_in": "nextcloud",
+      "command": "php occ config:app:get sociallogin oidc_provider_url (pre-check) + config:app:set",
+      "idempotent": true
+    }
+  ],
+  "update_strategy": {
+    "nextcloud_major_upgrade": [
+      "1. Backup ausloesen: ./backup.sh",
+      "2. Maintenance-Mode aktivieren: docker compose exec --user www-data nextcloud php occ maintenance:mode --on",
+      "3. Image-Tag in docker-compose.yml aktualisieren (z.B. 31.0.2 → 32.0.0)",
+      "4. docker compose pull nextcloud && docker compose up -d nextcloud",
+      "5. Upgrade ausfuehren: docker compose exec --user www-data nextcloud php occ upgrade",
+      "6. Maintenance-Mode deaktivieren: docker compose exec --user www-data nextcloud php occ maintenance:mode --off",
+      "7. Verify: curl https://cloud.example.com/status.php"
+    ],
+    "postgres_major_upgrade": [
+      "1. pg_dumpall in neuen Container migrieren (nicht in-place pg_upgrade)",
+      "2. Neuen postgres-Container mit neuer Version starten",
+      "3. Dump in neuen Container einspielen",
+      "4. Nextcloud neu starten"
+    ],
+    "patch_updates": [
+      "Watchtower mit Label-Filter (nur Patch-Level) oder Renovate fuer docker-compose",
+      "docker compose pull && docker compose up -d (nur Container neu erstellen die aktualisiert wurden)"
+    ]
+  },
+  "drift_detection": {
+    "method": "Periodischer Diff der aktuellen docker-compose.yml gegen .docker-compose-reference.yml",
+    "check_command": "diff <(docker compose config 2>/dev/null) .docker-compose-reference.yml || echo 'DRIFT DETECTED'",
+    "schedule": "Taeglich via cron"
+  },
+  "assumptions": [
+    "Traefik laeuft bereits im Netzwerk 'web'",
+    "ACME-Resolver 'acme-resolver' ist in Traefik static config definiert",
+    "Secrets werden vor Deployment als Env-Vars gesetzt (.env)",
+    "Internes Docker-Netzwerk 'internal' wird bei Bedarf erstellt",
+    "Nextcloud-Auto-Install laeuft beim ersten Start (60s+ Startup)",
+    "Redis verwendet ACL-File statt --requirepass (kein Passwort in cmdline)",
+    "Backup-Script wird via Cron taeglich ausgefuehrt",
+    "Healthcheck-Monitor laeuft als Cron-Job (z.B. alle 5min)",
+    "Volume-Mount-Reihenfolge: config+apps vor html um Ueberschreiben zu vermeiden"
+  ]
+}

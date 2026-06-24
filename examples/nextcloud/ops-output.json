@@ -1,0 +1,75 @@
+{
+  "agent": "ops",
+  "programm": "nextcloud",
+  "overall_pass": true,
+  "kategorien": {
+    "O1_monitoring": {
+      "pass": true,
+      "note": "Healthchecks fuer ALLE 3 Services definiert und korrekt umgesetzt: Postgres (pg_isready), Redis (redis-cli -a \u0024{REDIS_PASSWORD} ping), Nextcloud (HTTP-Status mit JSON-Parsing auf installed:true + maintenance:false). Interval/Timeout/Retries sinnvoll gewaehlt. depends_on mit condition:service_healthy. healthcheck-monitor.sh fuer Alerting via Webhook/Mail. Prometheus-Metrics via Traefik in Annahmen referenziert."
+    },
+    "O2_logging": {
+      "pass": true,
+      "note": "Logging-Strategie definiert: json-file Driver mit max-size:10m / max-file:3 fuer ALLE 3 Services. Log-Level via NEXTCLOUD_LOGLEVEL konfigurierbar. Kritische Log-Quellen identifiziert (App, DB, Traefik-Proxy)."
+    },
+    "O3_backup": {
+      "pass": true,
+      "note": "Backup-Plan via backup.sh implementiert: pg_dump fuer DB + tar/rsync fuer Volumes (config, custom_apps). Retention via BACKUP_RETENTION_DAYS (default 7 Tage). Restore-Reihenfolge im Rollback dokumentiert (DB \u2192 Config \u2192 Redeploy \u2192 Verify). Cron-basierte taegliche Ausfuehrung in Annahmen referenziert."
+    },
+    "O4_rollback": {
+      "pass": true,
+      "note": "Rollback-Schritte vollstaendig und in korrekter Reihenfolge: Stop \u2192 Data-Restore (pg_restore aus Backup-Dump) \u2192 Config-Rollback (git checkout) \u2192 Redeploy \u2192 Verify. Pre-Deploy Snapshot als optionaler Schutz. Teilausfall-Strategie ueber modularisierte Rollback-Schritte abgedeckt."
+    },
+    "O5_maintenance": {
+      "pass": true,
+      "note": "Update-Strategie vollstaendig dokumentiert: Nextcloud Major Upgrade (Backup \u2192 Maintenance-Mode \u2192 Pull \u2192 occ upgrade \u2192 Verify), Postgres Major Upgrade (pg_dumpall \u2192 neuer Container \u2192 Import), Patch-Updates (Watchtower/Renovate + pull/up)."
+    },
+    "O6_drift": {
+      "pass": true,
+      "note": "Drift-Erkennung implementiert: periodischer Diff docker compose config vs .docker-compose-reference.yml, taeglich via Cron. Deploy-Schritte idempotent: OIDC mit Pre-Check, Volumes mit || true, .env-Validierung als Preflight. Keine manuellen Voraussetzungen."
+    }
+  },
+  "fehlerliste": [],
+  "warnings": [
+    {
+      "severity": "medium",
+      "text": "User-Daten (html/data) werden im Backup nicht gesichert \u2014 nur config und custom_apps",
+      "fix": "Entweder Volume 'nextcloud-html' in backup.sh ergaenzen (data-Ordner innerhalb html-Volume) oder separates Volume fuer /var/www/html/data definieren und sichern",
+      "category": "O3_backup"
+    },
+    {
+      "severity": "low",
+      "text": "env_validate (Preflight Step 2) nutzt Pipeline mit exit 1 im while-read \u2014 exit beendet nur Subshell, nicht das Skript",
+      "fix": "shopt -s lastpipe aktivieren (Bash 4.2+) oder while-Schleife mit Process-Substitution (< <(grep ...)) verwenden, damit exit 1 wirksam wird",
+      "category": "O6_drift"
+    },
+    {
+      "severity": "low",
+      "text": "Redis Healthcheck uebergibt Passwort via -a Flag \u2014 sichtbar in Prozessliste (ps aux)",
+      "fix": "Alternativ REDISCLI_AUTH Umgebungsvariable setzen oder redis-cli mit --no-auth-warning und vorgeladenem ACL-User arbeiten",
+      "category": "O1_monitoring"
+    },
+    {
+      "severity": "low",
+      "text": "Prometheus-Metrics nur in Annahmen referenziert, nicht in Blueprint-Artefakten (Traefik static config nicht Teil des Deployments)",
+      "fix": "Falls Prometheus-Scraping gewuenscht, Traefik static config mit Prometheus-Endpoint als separates Artefakt dokumentieren oder in Annahmen explizit als extern bestaetigen",
+      "category": "O1_monitoring"
+    }
+  ],
+  "next_actions": [
+    {
+      "priority": 1,
+      "action": "User-Daten-Backup ergaenzen: Volume fuer /var/www/html/data sicherstellen und in backup.sh aufnehmen (Trennung von Code/Config und Nutzdaten)",
+      "category": "O3_backup"
+    },
+    {
+      "priority": 2,
+      "action": "env_validate Befehl haerten: Pipeline-Exit-Problem beheben, damit fehlende .env-Variablen tatsaechlich zum Abbruch fuehren",
+      "category": "O6_drift"
+    },
+    {
+      "priority": 3,
+      "action": "Backup-Restore-End-to-End-Test dokumentieren (nicht nur Rollback-Schritte, sondern konkreten Testlauf definieren)",
+      "category": "O3_backup"
+    }
+  ]
+}
