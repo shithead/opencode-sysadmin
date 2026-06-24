@@ -1,0 +1,9 @@
+# Referenzdokument — nur fuer Requirements, nicht Teil des Projekts
+basisplanung.txt
+
+# Secrets — nie committen
+.env
+*.secret
+
+# Python
+__pycache__/

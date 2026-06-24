@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencode-systemadministration/schemas/spec.schema.json",
+  "title": "Spec-Agent Output",
+  "description": "Soll-Spezifikation fuer ein Programm, erstellt vom Setup-Assembler-Agent",
+  "type": "object",
+  "required": ["programm", "image", "ports", "volumes", "dependencies", "healthcheck", "routing", "secrets_refs"],
+  "properties": {
+    "programm": {
+      "type": "string",
+      "description": "Programm-Name (z.B. nextcloud)"
+    },
+    "version": {
+      "type": "string",
+      "description": "Fixierte Programm-Version"
+    },
+    "image": {
+      "type": "string",
+      "description": "Fixiertes Docker-Image mit Tag (KEIN :latest)"
+    },
+    "image_arch": {
+      "type": "string",
+      "enum": ["x86_64", "arm64", "multi-arch"],
+      "description": "Ziel-Architektur des Images"
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["internal"],
+        "properties": {
+          "internal": { "type": "integer" },
+          "external": { "type": ["integer", "null"] },
+          "protocol": { "type": "string", "default": "tcp" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "volumes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "type", "name"],
+        "properties": {
+          "path": { "type": "string", "description": "Mount-Path im Container" },
+          "type": { "type": "string", "enum": ["persistent", "config", "tmpfs", "bind"] },
+          "name": { "type": "string", "description": "Volume-Name (Docker) oder PVC-Name (K8s)" },
+          "size": { "type": "string", "description": "Groesse (nur K8s PVC)" },
+          "uid": { "type": "integer", "description": "UID des Schreibenden Prozesses" },
+          "gid": { "type": "integer", "description": "GID des Schreibenden Prozesses" },
+          "readonly": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["service", "version", "reason"],
+        "properties": {
+          "service": { "type": "string" },
+          "version": { "type": "string" },
+          "image": { "type": "string", "description": "Fixiertes Image des abhaengigen Services" },
+          "reason": { "type": "string" },
+          "database": { "type": "string", "description": "Database-Name der erstellt werden muss" },
+          "user": { "type": "string", "description": "DB-User der erstellt werden muss" }
+        }
+      }
+    },
+    "healthcheck": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["http", "tcp", "command"] },
+        "path": { "type": "string", "description": "HTTP-Endpoint (nur bei type: http)" },
+        "port": { "type": "integer", "description": "Port (nur bei type: tcp)" },
+        "command": { "type": "string", "description": "Shell-Command (nur bei type: command)" },
+        "interval": { "type": "string", "default": "30s" },
+        "timeout": { "type": "string", "default": "10s" },
+        "retries": { "type": "integer", "default": 3 }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "required": ["host", "target_port", "tls"],
+      "properties": {
+        "host": { "type": "string", "description": "Externer Hostname" },
+        "path_prefix": { "type": "string", "description": "Optionaler Pfad-Praefix" },
+        "target_port": { "type": "integer" },
+        "tls": { "type": "boolean" },
+        "websocket": { "type": "boolean", "default": false },
+        "http2": { "type": "boolean", "default": true },
+        "oidc": {
+          "type": "object",
+          "description": "OIDC/OAuth-Konfiguration (falls zutreffend)",
+          "properties": {
+            "provider": { "type": "string" },
+            "issuer": { "type": "string", "format": "uri" },
+            "redirect_uri": { "type": "string", "format": "uri" },
+            "client_id_ref": { "type": "string", "description": "Referenz auf Secret fuer Client-ID" }
+          }
+        },
+        "required_headers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Benoetigte Proxy-Header (X-Forwarded-For, X-Forwarded-Proto, etc.)"
+        }
+      }
+    },
+    "secrets_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Referenz-Namen aller benoetigten Secrets (keine Klartext-Werte)"
+    },
+    "resources": {
+      "type": "object",
+      "description": "Empfohlene Ressourcen-Limits",
+      "properties": {
+        "cpu_limit": { "type": "string" },
+        "cpu_request": { "type": "string" },
+        "mem_limit": { "type": "string" },
+        "mem_request": { "type": "string" }
+      }
+    },
+    "restart_policy": {
+      "type": "string",
+      "enum": ["no", "always", "on-failure", "unless-stopped"],
+      "default": "unless-stopped"
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Getroffene Annahmen und Entscheidungen"
+    }
+  }
+}

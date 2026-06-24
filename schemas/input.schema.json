@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencode-systemadministration/schemas/input.schema.json",
+  "title": "User Input",
+  "description": "Input vom User an den Orchestrator: Programm + Environment + Frontdoor-Kontext",
+  "type": "object",
+  "required": ["programme", "environment"],
+  "properties": {
+    "programme": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Programm-Namen, die eingerichtet werden sollen (z.B. nextcloud, keycloak)"
+    },
+    "environment": {
+      "type": "object",
+      "required": ["os", "orchestrator"],
+      "properties": {
+        "os": {
+          "type": "string",
+          "description": "Ziel-Betriebssystem",
+          "examples": ["debian", "ubuntu", "rhel"]
+        },
+        "orchestrator": {
+          "type": "string",
+          "enum": ["docker", "kubernetes", "k8s"],
+          "description": "Container-Orchestrator"
+        },
+        "arch": {
+          "type": "string",
+          "enum": ["x86_64", "arm64"],
+          "default": "x86_64"
+        },
+        "cpu": {
+          "type": "string",
+          "description": "Verfuegbare CPU-Kapazitaet"
+        },
+        "ram": {
+          "type": "string",
+          "description": "Verfuegbarer Arbeitsspeicher"
+        },
+        "base_domain": {
+          "type": "string",
+          "description": "Basis-Domain fuer alle Services"
+        }
+      }
+    },
+    "frontdoor": {
+      "type": "object",
+      "required": ["typ"],
+      "properties": {
+        "typ": {
+          "type": "string",
+          "enum": ["traefik", "nginx", "haproxy", "none"],
+          "description": "Typ der Frontdoor (Reverse-Proxy)"
+        },
+        "tls": {
+          "type": "string",
+          "enum": ["acme", "cert-manager", "custom", "none"],
+          "default": "acme",
+          "description": "TLS-Zertifikatsstrategie"
+        },
+        "proxy_headers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Weiterzuleitende Proxy-Header"
+        },
+        "websocket_support": {
+          "type": "boolean",
+          "default": false
+        },
+        "http2_support": {
+          "type": "boolean",
+          "default": true
+        },
+        "network": {
+          "type": "string",
+          "description": "Docker-Netzwerk oder K8s-Namespace"
+        }
+      }
+    },
+    "acme": {
+      "type": "object",
+      "description": "ACME/TLS-Konfiguration",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "ca_server": { "type": "string" },
+        "staging": { "type": "boolean", "default": false }
+      }
+    },
+    "services": {
+      "type": "object",
+      "description": "Servicespezifische Konfiguration pro Programm",
+      "patternProperties": {
+        "^.*$": {
+          "type": "object",
+          "properties": {
+            "hostname": { "type": "string" },
+            "port": { "type": "integer" },
+            "db_type": { "type": "string" },
+            "admin_user": { "type": "string" },
+            "extra_env": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

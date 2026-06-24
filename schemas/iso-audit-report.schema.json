@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencode-systemadministration/schemas/iso-audit-report.schema.json",
+  "title": "ISO27001 Audit Report",
+  "description": "Audit-faehiger Evidenzbericht — Output des ISO-Audit-Evidence-Agenten (Stufe 3)",
+  "type": "object",
+  "required": ["agent", "audit_date", "scope", "overall_pass", "evidence", "non_conformities", "audit_conclusion"],
+  "properties": {
+    "agent": {
+      "type": "string",
+      "const": "iso-audit"
+    },
+    "audit_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Datum der Audit-Durchfuehrung"
+    },
+    "auditor": {
+      "type": "string",
+      "default": "KI-Agent",
+      "description": "Wer hat das Audit durchgefuehrt?"
+    },
+    "scope": {
+      "type": "string",
+      "description": "Audit-Scope (z.B. 'Nextcloud Docker Setup auf Debian')"
+    },
+    "overall_pass": {
+      "type": "boolean",
+      "description": "Gesamtergebnis — true wenn keine Major Non-Conformities"
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Evidence-Kategorien E1-E12",
+      "patternProperties": {
+        "^E\\d+_.*$": {
+          "type": "object",
+          "required": ["pass", "findings"],
+          "properties": {
+            "pass": { "type": "boolean" },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["test", "result", "status"],
+                "properties": {
+                  "test": { "type": "string", "description": "Was wurde geprueft?" },
+                  "result": { "type": "string", "description": "Ergebnis/Wert" },
+                  "status": {
+                    "type": "string",
+                    "enum": ["ok", "fail", "warning"],
+                    "description": "Bewertung"
+                  },
+                  "fix": { "type": "string", "description": "Fix-Vorschlag (nur bei fail)" },
+                  "value": { "type": "string" }
+                }
+              }
+            },
+            "source": {
+              "type": "string",
+              "description": "Woher stammen die Evidence-Daten? (Befehl, Log-Pfad, API-Call)"
+            }
+          }
+        }
+      }
+    },
+    "non_conformities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "iso_control", "finding"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["major", "minor", "observation"],
+            "description": "Major = Audit nicht bestanden; Minor = behebbar; Observation = Empfehlung"
+          },
+          "iso_control": {
+            "type": "string",
+            "description": "Betroffene ISO27001-Annex-A-Kontrolle (z.B. A.12.4.3)"
+          },
+          "finding": {
+            "type": "string",
+            "description": "Beschreibung des Mangels"
+          },
+          "evidence_missing": {
+            "type": "string",
+            "description": "Welcher Nachweis fehlt?"
+          },
+          "fix": {
+            "type": "string",
+            "description": "Konkreter Fix-Vorschlag"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date",
+            "description": "Frist zur Behebung"
+          }
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "iso_control": { "type": "string" },
+          "note": { "type": "string" }
+        }
+      },
+      "description": "Empfehlungen, keine Pflicht — aber dokumentiert"
+    },
+    "audit_conclusion": {
+      "type": "string",
+      "description": "Zusammenfassung des Audit-Ergebnisses (1-2 Saetze)"
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["priority", "action"],
+        "properties": {
+          "priority": { "type": "integer" },
+          "action": { "type": "string" },
+          "iso_control": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "orchestrator": {
+      "mode": "primary",
+      "description": "Orchestriert die IT-Systemadministration-Pipeline: Spec → Blueprint → Validate (Phase 1-3) + ISO27001 (Phase 4-6). Dispatched Subagents via Task-Tool.",
+      "prompt": "{file:./agents/orchestrator.md}",
+      "permission": {
+        "task": { "*": "allow" },
+        "bash": { "*": "ask", "docker *": "allow", "git *": "allow", "mkdir *": "allow" },
+        "edit": "allow",
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "webfetch": "allow"
+      }
+    },
+    "spec-agent": {
+      "mode": "subagent",
+      "description": "Setup-Assembler — erstellt Soll-Spezifikation aus User-Input (Ports, Images, Volumes, Dependencies, Routing, Secrets). German-language agent, outputs JSON per schemas/spec.schema.json.",
+      "prompt": "{file:./agents/spec-agent.md}",
+      "hidden": true,
+      "permission": {
+        "edit": "allow",
+        "read": "allow",
+        "bash": "deny"
+      }
+    },
+    "blueprint-agent": {
+      "mode": "subagent",
+      "description": "Execution-Blueprint — erzeugt Docker-Compose / K8s-Manifests + Deploy-Steps aus validierter Spec. German-language agent, outputs JSON per schemas/blueprint.schema.json.",
+      "prompt": "{file:./agents/blueprint-agent.md}",
+      "hidden": true,
+      "permission": {
+        "edit": "allow",
+        "read": "allow",
+        "bash": "deny"
+      }
+    },
+    "validation-agent": {
+      "mode": "subagent",
+      "description": "Validation & Consistency — prueft Spec + Blueprint auf Konsistenz und Vollstaendigkeit (7 Kategorien A-G). German-language, outputs JSON per schemas/validation-result.schema.json.",
+      "prompt": "{file:./agents/validation-agent.md}",
+      "hidden": true,
+      "permission": {
+        "edit": "allow",
+        "read": "allow",
+        "bash": "deny"
+      }
+    },
+    "security-agent": {
+      "mode": "subagent",
+      "description": "Security & Secrets — prueft TLS, Secret-Handling, Least Privilege, Admin-Zugaenge (5 Kategorien S1-S5). German-language, outputs JSON per schemas/validation-result.schema.json.",
+      "prompt": "{file:./agents/security-agent.md}",
+      "hidden": true,
+      "permission": {
+        "edit": "allow",
+        "read": "allow",
+        "bash": "deny"
+      }
+    },
+    "ops-agent": {
+      "mode": "subagent",
+      "description": "Runbook & Observability — prueft Monitoring, Logging, Backup, Rollback, Wartung (6 Kategorien O1-O6). German-language, outputs JSON per schemas/validation-result.schema.json.",
+      "prompt": "{file:./agents/ops-agent.md}",
+      "hidden": true,
+      "permission": {
+        "edit": "allow",
+        "read": "allow",
+        "bash": "deny"
+      }
+    },
+    "iso-gap-agent": {
+      "mode": "subagent",
+      "description": "ISO27001 Gap-Analyse (Stufe 1) — Soll/Ist-Abgleich gegen Annex A (15 Kategorien G1-G15). Keine Nachweise erwartet. German-language, outputs JSON per schemas/validation-result.schema.json.",
+      "prompt": "{file:./agents/iso-gap-agent.md}",
+      "hidden": true,
+      "permission": {
+        "edit": "allow",
+        "read": "allow",
+        "bash": "deny"
+      }
+    },
+    "iso-policy-agent": {
+      "mode": "subagent",
+      "description": "ISO27001 Policy-Referenz (Stufe 2) — prueft ob Policy-Dokumente existieren und aktuell sind (8 Policies). German-language, outputs JSON per schemas/validation-result.schema.json.",
+      "prompt": "{file:./agents/iso-policy-agent.md}",
+      "hidden": true,
+      "permission": {
+        "edit": "allow",
+        "read": "allow",
+        "bash": "deny"
+      }
+    },
+    "iso-audit-agent": {
+      "mode": "subagent",
+      "description": "ISO27001 Audit-Evidence (Stufe 3) — prueft konkrete Nachweise (Logs, Configs, Git-History). Erstellt audit-faehigen Bericht. German-language, outputs JSON per schemas/iso-audit-report.schema.json.",
+      "prompt": "{file:./agents/iso-audit-agent.md}",
+      "hidden": true,
+      "permission": {
+        "edit": "allow",
+        "read": "allow",
+        "bash": { "*": "ask", "docker *": "allow", "git log*": "allow", "ls *": "allow", "cat *": "allow" },
+        "grepp": "allow"
+      }
+    }
+  },
+  "default_agent": "orchestrator",
+  "instructions": ["AGENTS.md"]
+}

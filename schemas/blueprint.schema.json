@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencode-systemadministration/schemas/blueprint.schema.json",
+  "title": "Blueprint-Agent Output",
+  "description": "Implementierungsplan + Artefakte, erstellt vom Execution-Blueprint-Agent",
+  "type": "object",
+  "required": ["programm", "artifacts", "deploy_steps", "rollback_steps"],
+  "properties": {
+    "programm": {
+      "type": "string",
+      "description": "Programm-Name"
+    },
+    "artifacts": {
+      "type": "object",
+      "description": "Zu erstellende Konfigurationsdateien",
+      "patternProperties": {
+        "^.*$": {
+          "type": "object",
+          "required": ["filename", "content"],
+          "properties": {
+            "filename": { "type": "string" },
+            "content": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        }
+      }
+    },
+    "deploy_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "action", "description"],
+        "properties": {
+          "step": { "type": "integer" },
+          "action": { "type": "string" },
+          "description": { "type": "string" },
+          "command": { "type": "string" },
+          "validation": { "type": "string", "description": "Wie wird Erfolg dieses Schritts geprueft?" },
+          "rollback_on_failure": { "type": "string" }
+        }
+      }
+    },
+    "rollback_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "action", "description"],
+        "properties": {
+          "step": { "type": "integer" },
+          "action": { "type": "string" },
+          "description": { "type": "string" },
+          "command": { "type": "string" }
+        }
+      }
+    },
+    "startup_order": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Reihenfolge fuer docker-compose up / kubectl apply"
+    },
+    "init_commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "exec_in": { "type": "string", "description": "In welchem Container ausfuehren" },
+          "command": { "type": "string" },
+          "idempotent": { "type": "boolean", "description": "Kann gefahrlos wiederholt werden?" }
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

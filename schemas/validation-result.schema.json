@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencode-systemadministration/schemas/validation-result.schema.json",
+  "title": "Validation Result",
+  "description": "Ergebnis eines Validierungs-Agenten (Validation / Security / Ops)",
+  "type": "object",
+  "required": ["agent", "programm", "kategorien", "next_actions"],
+  "properties": {
+    "agent": {
+      "type": "string",
+      "enum": ["validation", "security", "ops"],
+      "description": "Welcher Agent hat validiert?"
+    },
+    "programm": {
+      "type": "string",
+      "description": "Validierter Programm-Name"
+    },
+    "overall_pass": {
+      "type": "boolean",
+      "description": "Gesamtergebnis: alle Kategorien bestanden?"
+    },
+    "kategorien": {
+      "type": "object",
+      "description": "Pruef-Kategorien mit Ergebnis",
+      "patternProperties": {
+        "^.*$": {
+          "type": "object",
+          "required": ["pass"],
+          "properties": {
+            "pass": { "type": "boolean" },
+            "note": { "type": "string" },
+            "issues": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "fehlerliste": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "text"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low"],
+            "description": "Schweregrad"
+          },
+          "text": { "type": "string", "description": "Fehlerbeschreibung" },
+          "fix": { "type": "string", "description": "Konkreter Fix-Vorschlag" },
+          "category": { "type": "string", "description": "Betroffene Kategorie" }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": { "type": "string" },
+          "text": { "type": "string" },
+          "fix": { "type": "string" }
+        }
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["priority", "action"],
+        "properties": {
+          "priority": { "type": "integer", "description": "1 = hoechste" },
+          "action": { "type": "string" },
+          "category": { "type": "string" }
+        }
+      }
+    }
+  }
+}
