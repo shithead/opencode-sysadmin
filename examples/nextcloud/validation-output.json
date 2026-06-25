@@ -3,26 +3,103 @@
   "programm": "nextcloud",
   "overall_pass": false,
   "kategorien": {
-    "A_identity": { "pass": true, "note": "Images fixiert, Arch passt, Ports konsistent. OIDC-Redirect-URI definiert aber keine Traefik-Route dafuer." },
-    "B_routing": { "pass": false, "issues": ["WebSocket: Spec=false, UserInput=true → Nextcloud braucht WS fuer Notify", "Middleware-Namensdrift (redirect vs redirectScheme)", "OIDC-Route fehlt in Traefik-Konfiguration"] },
-    "C_persistence": { "pass": true, "issues": ["Volume-Mount-Reihenfolge bei ueberlappenden Pfaden unsicher", "Redis-Persistenz nicht explizit dokumentiert"] },
-    "D_dependencies": { "pass": true, "note": "Startup-Order korrekt, Readiness-Gates vorhanden, keine Zyklen." },
-    "E_health": { "pass": true, "note": "Healthchecks plausibel, Restart-Policy definiert, Deploy wiederholbar." },
-    "F_config": { "pass": true, "issues": ["DB-User/DB-Name nicht explizit in env.template", "Redis-Passwort-Integration unvollstaendig", "OIDC-Konfiguration zu vage"] },
-    "G_backup": { "pass": false, "issues": ["Keine Backup-Strategie definiert", "Kein Restore-Verfahren dokumentiert", "Rollback ohne DB-Snapshot"] }
+    "A_identity": {
+      "pass": true,
+      "note": "Alle Image-Tags fixiert (31.0.2-apache, 16.6-alpine, 7.4-alpine), kein :latest. image_arch x86_64 passt zum Environment. Externe Ports null bei vorhandener Traefik-Frontdoor korrekt. Redirect-URI https://cloud.example.com/apps/sociallogin/custom_oidc/redirect konsistent mit routing.host + TLS. Container-Port 80 im Blueprint uebereinstimmend."
+    },
+    "B_routing": {
+      "pass": true,
+      "note": "Traefik-Labels mit entrypoints websecure, TLS acme-resolver und Middleware-Chain (headers, redirectscheme, ratelimit) im Blueprint vorhanden. Target-Port 80 stimmt mit Container-Listen-Port ueberein. HTTP2 wird durch Traefik bei TLS-Entrypoint implizit aktiviert. Required-Header X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host per nextcloud-headers Middleware konfiguriert. WebSocket wird von Traefik fuer HTTP/1.1-Router standardmaessig unterstuetzt – keine explizite WebSocket-Middleware noetig, aber auch nicht als konfiguriert dokumentiert.",
+      "issues": [
+        "WebSocket-Support (in Spec gefordert) im Blueprint nicht explizit als Traefik-Label oder Konfiguration dokumentiert"
+      ]
+    },
+    "C_persistence": {
+      "pass": false,
+      "issues": [
+        "PostgreSQL-Datenbank-Volume nicht explizit im Blueprint dokumentiert. Spec definiert database=nextcloud und user=nextcloud fuer postgresql-Dependency, aber Blueprint-Summary erwaehnt kein Volume fuer /var/lib/postgresql/data",
+        "Redis-Persistenz-Entscheidung nicht dokumentiert: Fuer Nextcloud-Caching ist Redis in der Regel ephemer, aber der Blueprint muss explizit festhalten, ob Persistenz benoetigt wird (z.B. 'Redis als Cache ohne Persistenz') – aktuell weder Volume noch expliziter Verzicht deklariert"
+      ]
+    },
+    "D_dependencies": {
+      "pass": true,
+      "note": "Startup-Reihenfolge postgres → redis → nextcloud definiert. Readiness-Gates via depends_on condition service_healthy mit pg_isready, redis-cli ping und curl /status.php. Keine harten Sleeps. init.sh fuer Migration/Setup vorgesehen. Keine zyklischen Abhaengigkeiten."
+    },
+    "E_health": {
+      "pass": true,
+      "note": "Healthchecks fuer alle 3 Services definiert (pg_isready, redis-cli -a ${REDIS_PASSWORD} ping, curl /status.php). Restart-Policy unless-stopped gesetzt. Deploy-Schritte (8 Steps) mit Drift-Erkennung (Step 8). Idempotenz der init.sh (envsubst-basiert) kann aus Summary nicht abschliessend verifiziert werden."
+    },
+    "F_config": {
+      "pass": true,
+      "issues": [
+        "Spec verletzt eigenes Schema: dependencies-Eintraege enthalten kein required-Feld 'reason' (weder bei postgresql noch bei redis). Blueprint-Spec-Konsistenz selbst ist gegeben."
+      ],
+      "note": "Secrets-Referenzen: DB_PASSWORD, NEXTCLOUD_ADMIN_USER, NEXTCLOUD_ADMIN_PASSWORD, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, REDIS_PASSWORD alle in env.template als ${VAR} referenziert. Dependencies postgresql und redis als Services im docker-compose.yml vorhanden."
+    },
+    "G_backup": {
+      "pass": true,
+      "note": "Backup definiert: pg_dump fuer Postgres + Volume-rsync mit Retention. Restore-Reihenfolge in Rollback-Steps (stop→restore→config→redeploy→verify) abgebildet. 5 Rollback-Schritte definiert."
+    }
   },
   "fehlerliste": [
-    {"severity": "high", "text": "WebSocket-Support inkonsistent — Nextcloud braucht WS fuer Notify/Push", "fix": "Spec websocket auf true setzen; Traefik fuer WebSocket-Upgrades konfigurieren"},
-    {"severity": "high", "text": "OIDC-Redirect-Route fehlt in Traefik-Konfiguration", "fix": "Middleware fuer /apps/sociallogin/custom_oidc/redirect ergaenzen"},
-    {"severity": "high", "text": "Keine Backup-Strategie fuer DB+Volumes", "fix": "pg_dump-Cronjob, Volume-Snapshots vor Deploy, Restore-Reihenfolge dokumentieren"},
-    {"severity": "medium", "text": "Middleware-Namensdrift (redirect vs redirectScheme)", "fix": "Namen in docker-compose-Labels und traefik-dynamic.yml vereinheitlichen"},
-    {"severity": "medium", "text": "Volume-Mount-Reihenfolge bei ueberlappenden Pfaden", "fix": "Spezifischere Pfade NACH uebergeordneten mounten"}
+    {
+      "severity": "high",
+      "text": "PostgreSQL-Datenbank-Volume fehlt im Blueprint. Der docker-compose-Service 'postgres' benoetigt ein persistentes Volume fuer /var/lib/postgresql/data, um Datenverlust bei Container-Neustart zu verhindern.",
+      "fix": "Volume 'postgres_data' in docker-compose.yml ergaenzen und im postgres-Service unter /var/lib/postgresql/data mounten.",
+      "category": "C_persistence"
+    },
+    {
+      "severity": "medium",
+      "text": "Redis-Persistenz-Entscheidung nicht dokumentiert. Ohne explizite Aussage ist unklar, ob der Blueprint-Autor Redis-Persistenz bewusst weggelassen hat oder sie vergessen wurde.",
+      "fix": "Im Blueprint explizit vermerken: 'Redis dient als fluechtiger Cache (Session-Storage, File-Locking). Keine Persistenz erforderlich – Datenverlust bei Neustart ist akzeptabel.' ODER bei Bedarf AOF/RDB-Persistenz mit Volume konfigurieren.",
+      "category": "C_persistence"
+    },
+    {
+      "severity": "low",
+      "text": "WebSocket-Support in Spec gefordert (websocket: true), im Blueprint aber nicht explizit als Traefik-Konfiguration dokumentiert.",
+      "fix": "In der Blueprint-Dokumentation vermerken, dass Traefik WebSocket-Verbindungen ueber HTTP/1.1-Router standardmaessig durchreicht und kein zusaetzliches Label erforderlich ist. Optional: expliziten Kommentar in docker-compose.yml ergaenzen.",
+      "category": "B_routing"
+    },
+    {
+      "severity": "low",
+      "text": "Spec verletzt eigenes Schema: dependencies[].reason ist required, aber beide Dependencies (postgresql, redis) enthalten kein reason-Feld.",
+      "fix": "Spec-Output um reason-Felder ergaenzen, z.B. 'reason: Relationale Datenbank fuer Nextcloud' und 'reason: In-Memory-Cache fuer Session-Storage und File-Locking'.",
+      "category": "F_config"
+    },
+    {
+      "severity": "low",
+      "text": "OIDC-Issuer https://auth.example.com/realms/master verweist auf separaten Host auth.example.com. Ohne zusaetzliche Keycloak-Infrastruktur ist die OIDC-Integration nicht funktionsfaehig.",
+      "fix": "Sicherstellen, dass Keycloak unter auth.example.com erreichbar ist, oder den Issuer auf eine vorhandene Identitaets-Infrastruktur anpassen.",
+      "category": "A_identity"
+    }
+  ],
+  "warnings": [
+    {
+      "severity": "low",
+      "text": "Idempotenz der init.sh (envsubst-basiert) kann aus Blueprint-Summary nicht abschliessend beurteilt werden – ein wiederholter Deploy koennte zu Konflikten fuehren, falls init.sh nicht idempotent geschrieben ist.",
+      "fix": "init.sh mit Guards versehen (z.B. 'if ! table_exists; then CREATE TABLE...'), sodass die Ausfuehrung mehrfach ohne Fehler moeglich ist."
+    }
   ],
   "next_actions": [
-    {"priority": 1, "action": "OIDC-Route+Middleware in Traefik-Konfiguration ergaenzen"},
-    {"priority": 2, "action": "WebSocket-Support in Spec korrigieren und Traefik konfigurieren"},
-    {"priority": 3, "action": "Middleware-Namen vereinheitlichen"},
-    {"priority": 4, "action": "Backup-Strategie definieren (pg_dump + Volume-Snapshots)"},
-    {"priority": 5, "action": "Volume-Mount-Reihenfolge in docker-compose.yml validieren"}
+    {
+      "priority": 1,
+      "action": "PostgreSQL-Volume (postgres_data) im docker-compose.yml fuer /var/lib/postgresql/data ergaenzen",
+      "category": "C_persistence"
+    },
+    {
+      "priority": 2,
+      "action": "Redis-Persistenz-Entscheidung im Blueprint explizit dokumentieren (ephemer oder AOF/RDB)",
+      "category": "C_persistence"
+    },
+    {
+      "priority": 3,
+      "action": "Spec-Output korrigieren: dependencies[].reason fuer postgresql und redis nachtragen",
+      "category": "F_config"
+    },
+    {
+      "priority": 4,
+      "action": "WebSocket- und OIDC-Dokumentation im Blueprint praezisieren",
+      "category": "B_routing"
+    }
   ]
 }

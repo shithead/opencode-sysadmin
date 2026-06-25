@@ -1,0 +1,40 @@
+{
+  "programme": ["keycloak"],
+  "environment": {
+    "os": "debian",
+    "orchestrator": "docker",
+    "arch": "x86_64",
+    "cpu": "4",
+    "ram": "8GB",
+    "base_domain": "example.com"
+  },
+  "frontdoor": {
+    "typ": "traefik",
+    "tls": "acme",
+    "proxy_headers": [
+      "X-Forwarded-For",
+      "X-Forwarded-Proto",
+      "X-Forwarded-Host"
+    ],
+    "websocket_support": true,
+    "http2_support": true,
+    "network": "web"
+  },
+  "acme": {
+    "email": "admin@example.com",
+    "ca_server": "https://acme-v02.api.letsencrypt.org/directory",
+    "staging": false
+  },
+  "services": {
+    "keycloak": {
+      "hostname": "auth.example.com",
+      "db_type": "postgres",
+      "admin_user": "admin",
+      "extra_env": {
+        "KC_HOSTNAME": "auth.example.com",
+        "KC_PROXY": "edge",
+        "KC_HTTP_ENABLED": "true"
+      }
+    }
+  }
+}

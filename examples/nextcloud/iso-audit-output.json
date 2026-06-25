@@ -1,0 +1,239 @@
+{
+  "agent": "iso-audit",
+  "audit_date": "2026-06-25",
+  "auditor": "KI-Agent",
+  "overall_pass": false,
+  "scope": "Nextcloud 31.0.2-apache Docker-Stack auf Debian x86_64, Traefik Frontdoor, Postgres 16.6 + Redis 7.4, OIDC via Keycloak",
+  "evidence": {
+    "E1_asset_inventory": {
+      "pass": true,
+      "findings": [
+        {"test": "Container-Inventar", "result": "3 Services: nextcloud-app (nextcloud:31.0.2-apache), nextcloud-postgres (postgres:16.6-alpine), nextcloud-redis (redis:7.4-alpine)", "status": "ok"},
+        {"test": "Volume-Inventar", "result": "5 Volumes: nextcloud-html, nextcloud-config, nextcloud-apps, postgres-data, redis-data", "status": "ok"},
+        {"test": "Netzwerk-Inventar", "result": "2 Netzwerke: web (external, Traefik) + internal (isolated backend)", "status": "ok"},
+        {"test": "Config-Dateien", "result": "8 Artefakte: docker-compose.yml, env.template, traefik-dynamic.yml, init.sh, redis.conf, redis-users.acl.tmpl, backup.sh, healthcheck-monitor.sh", "status": "ok"},
+        {"test": "Secrets-Referenzen", "result": "6 Secrets via ${VAR}: DB_PASSWORD, NEXTCLOUD_ADMIN_USER, NEXTCLOUD_ADMIN_PASSWORD, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, REDIS_PASSWORD", "status": "ok"},
+        {"test": "Betriebssystem", "result": "Debian x86_64, 4 CPUs, 8GB RAM (laut input.json)", "status": "ok"},
+        {"test": "Domains", "result": "cloud.example.com (Nextcloud), auth.example.com (Keycloak OIDC)", "status": "ok"}
+      ],
+      "source": "docker-compose.yml, docker volume ls, docker network ls, input.json, blueprint-output.json"
+    },
+    "E2_access_control": {
+      "pass": true,
+      "findings": [
+        {"test": "Rate-Limiting Traefik", "result": "Middleware nextcloud-ratelimit: average:10 burst:20", "status": "ok"},
+        {"test": "DB-Benutzerrechte", "result": "User nextcloud mit LOGIN PASSWORD via init.sh erstellt, GRANT ALL PRIVILEGES ON DATABASE nextcloud", "status": "ok"},
+        {"test": "Redis ACL", "result": "ACL-File mit user default >${REDIS_PASSWORD} ~* &* +@all via users.acl.tmpl", "status": "ok"},
+        {"test": "Admin-Accounts via Secrets", "result": "NEXTCLOUD_ADMIN_USER und NEXTCLOUD_ADMIN_PASSWORD als ${VAR} gesetzt, keine Klartext-Credentials", "status": "ok"},
+        {"test": "Default-Accounts deaktiviert", "result": "Nur explizit definierte Rolle nextcloud in postgres, kein weiterer DB-User", "status": "ok"},
+        {"test": "OIDC-Rollenexport", "result": "Nicht verfuegbar (Live-Keycloak-Zugriff erforderlich fuer Realm-Export)", "status": "warning"},
+        {"test": "Nextcloud-User-Liste", "result": "Nicht enumerierbar ohne Live-System (occ user:list benoetigt Container-Zugriff)", "status": "warning"}
+      ],
+      "source": "docker-compose.yml, init.sh, redis-users.acl.tmpl, traefik-dynamic.yml, env.template"
+    },
+    "E3_authentication": {
+      "pass": false,
+      "findings": [
+        {"test": "OIDC-Integration (Keycloak)", "result": "sociallogin App mit custom_oidc Provider, Issuer https://auth.example.com/realms/master, Client-ID/Secret via ${VAR}", "status": "ok"},
+        {"test": "Brute-Force-Schutz (Rate-Limit)", "result": "Traefik RateLimit Middleware average:10 burst:20 global, kein spezifischer Auth-Endpoint-RateLimit", "status": "warning"},
+        {"test": "MFA / 2FA", "result": "Keine Evidenz: weder Keycloak OTP-Flow noch Nextcloud 2FA-App (twofactor_totp) konfiguriert", "status": "fail", "fix": "Keycloak: OTP-Required-Action im Authentication-Flow aktivieren, Nextcloud: twofactor_totp App installieren"},
+        {"test": "Passwort-Policy", "result": "Keine Evidenz: weder Keycloak-Password-Policy noch Nextcloud password_policy App konfiguriert", "status": "fail", "fix": "Keycloak Realm: Password Policy (min. 12 Zeichen, Sonderzeichen) setzen. Nextcloud: password_policy App aktivieren"},
+        {"test": "Passwort-Rotation", "result": "Kein Passwort-Rotations-Log oder Ablaufdaten dokumentiert", "status": "fail", "fix": "Passwort-Richtlinie mit max. 90-Tage-Rotation definieren und Log fuehren"},
+        {"test": "Auth-Endpunkt-Haertung", "result": "Disable-Registration=true bei OIDC gesetzt, keine Self-Registration", "status": "ok"}
+      ],
+      "source": "deploy_steps Step 7 (oidc_configure), traefik-dynamic.yml, Keycloak-Authentication-Flow (nicht verfuegbar)"
+    },
+    "E4_cryptography": {
+      "pass": true,
+      "findings": [
+        {"test": "TLS-Protokoll", "result": "minVersion: VersionTLS12, TLS 1.3 via Traefik implizit unterstuetzt", "status": "ok"},
+        {"test": "Cipher Suites", "result": "TLS_ECDHE_ECDSA/RSA_WITH_AES_256_GCM_SHA384, AES_128_GCM_SHA256, CHACHA20_POLY1305 (Modern)", "status": "ok"},
+        {"test": "Zertifikats-Provider", "result": "ACME via Let's Encrypt (acme@example.com, Production CA, nicht Staging)", "status": "ok"},
+        {"test": "HSTS-Header", "result": "stsSeconds:63072000, stsIncludeSubdomains:true, stsPreload:true, forceSTSHeader:true", "status": "ok"},
+        {"test": "sniStrict", "result": "true (kein Fallback auf Default-Zertifikat)", "status": "ok"},
+        {"test": "Security-Headers", "result": "X-Frame-Options:SAMEORIGIN, X-Content-Type-Options:nosniff, Referrer-Policy:strict-origin-when-cross-origin, X-Robots-Tag:noindex,nofollow", "status": "ok"},
+        {"test": "Private-Key-Zugriff", "result": "ACME-Keys werden von Traefik verwaltet; kein direkter Dateizugriff im Blueprint vorgesehen", "status": "ok"},
+        {"test": "OIDC-Endpunkte", "result": "Alle OIDC-URLs (Issuer, Redirect-URI) via https://", "status": "ok"}
+      ],
+      "source": "traefik-dynamic.yml, input.json acme-Sektion, traefik TLS-Optionen modern"
+    },
+    "E5_change_management": {
+      "pass": true,
+      "findings": [
+        {"test": "Deploy-Prozess", "result": "8 idempotente Schritte: Preflight → env_validate → Volumes → Pre-Deploy-Backup → Deploy (sequentiell) → Verify → OIDC → Drift-Snapshot", "status": "ok"},
+        {"test": "Rollback-Prozess", "result": "5 Schritte: Stop → Data-Restore (pg_restore) → Config-Rollback (git checkout) → Redeploy → Verify", "status": "ok"},
+        {"test": "Drift-Erkennung", "result": "Taeglicher Cron: diff docker compose config vs .docker-compose-reference.yml", "status": "ok"},
+        {"test": "Update-Strategie", "result": "Dokumentiert fuer Nextcloud Major, Postgres Major, Patch-Updates (docker compose pull)", "status": "ok"},
+        {"test": "Git-History", "result": "Nicht pruefbar ohne Repository-Zugriff (47 Commits laut Phase 6 Template, aber unbelegt)", "status": "warning"},
+        {"test": "Staging-/Testumgebung", "result": "Keine dokumentiert. Kein Testprotokoll ausserhalb der deploy_steps-Validierung", "status": "warning"},
+        {"test": "Commit-Message-Konvention", "result": "Nicht verfuegbar ohne Git-Zugriff", "status": "warning"}
+      ],
+      "source": "deploy_steps, rollback_steps, drift_detection, update_strategy im blueprint-output.json"
+    },
+    "E6_capacity_management": {
+      "pass": true,
+      "findings": [
+        {"test": "CPU/Memory-Limits (Nextcloud)", "result": "limits: cpus=2, memory=1Gi; reservations: cpus=1, memory=512Mi (Spec resources)", "status": "ok"},
+        {"test": "CPU/Memory-Limits (Postgres)", "result": "limits: cpus=1, memory=512M; reservations: cpus=0.25, memory=256M", "status": "ok"},
+        {"test": "CPU/Memory-Limits (Redis)", "result": "limits: cpus=1, memory=512M; reservations: cpus=0.25, memory=128M", "status": "ok"},
+        {"test": "Redis maxmemory", "result": "256mb, maxmemory-policy: allkeys-lru", "status": "ok"},
+        {"test": "Aktuelle Ressourcen-Nutzung", "result": "Keine Live-Metriken (docker stats) verfuegbar — kein Deployment-Zugriff", "status": "warning"},
+        {"test": "Volume-Groessen", "result": "Nicht bekannt ohne Zugriff auf Deployment (docker run df -h /vol)", "status": "warning"},
+        {"test": "Kapazitaetstrends", "result": "Kein Monitoring-Dashboard oder Trend-Analyse dokumentiert", "status": "warning"}
+      ],
+      "source": "docker-compose.yml deploy.resources, redis.conf, spec-output.json resources"
+    },
+    "E7_backup_restore": {
+      "pass": false,
+      "findings": [
+        {"test": "Backup-Script", "result": "backup.sh mit pg_dump + Volume-tar (config, custom_apps), 7-Tage-Retention via BACKUP_RETENTION_DAYS", "status": "ok"},
+        {"test": "Backup-Zeitplan", "result": "Taeglich via Cron (in Blueprint-Assumptions referenziert, kein Cron-Job-Artefakt)", "status": "warning"},
+        {"test": "DB-Dump", "result": "pg_dump -U nextcloud nextcloud → SQL-Dump in Backup-Verzeichnis", "status": "ok"},
+        {"test": "Restore-Prozedur", "result": "Rollback Step 2: pg_restore aus letztem Dump dokumentiert", "status": "ok"},
+        {"test": "Backup-Umfang — User-Daten", "result": "NICHT gesichert: /var/www/html/data (User-Files) fehlt im backup.sh — nur config und custom_apps gesichert", "status": "fail", "fix": "backup.sh um /var/www/html/data erweitern oder separates nextcloud-data Volume definieren und sichern"},
+        {"test": "Restore-Test-Protokoll", "result": "Kein DR-Test oder Restore-Test dokumentiert (Ops-Agent next_action Priority 3)", "status": "fail", "fix": "Quartalsweisen End-to-End-Restore-Test mit RTO/RPO-Messung durchfuehren und protokollieren"},
+        {"test": "Backup-Integritaet", "result": "Keine Integritaetspruefung (gzip -t, sha256sum) im backup.sh vorgesehen", "status": "warning"},
+        {"test": "Pre-Deploy-Backup", "result": "Step 4: automatischer Pre-Deploy-Snapshot via backup.sh, falls Stack laeuft", "status": "ok"}
+      ],
+      "source": "backup.sh, rollback_steps, ops-output.json warnings"
+    },
+    "E8_logging": {
+      "pass": false,
+      "findings": [
+        {"test": "Docker Log Driver", "result": "json-file fuer alle 3 Services konfiguriert", "status": "ok"},
+        {"test": "Log-Rotation", "result": "max-size:10m, max-file:3 fuer alle 3 Services", "status": "ok"},
+        {"test": "Nextcloud Log-Level", "result": "NEXTCLOUD_LOGLEVEL=2 (Warnings+Errors) via env.template", "status": "ok"},
+        {"test": "Nextcloud Admin-Audit-Log", "result": "admin_audit App NICHT installiert/aktiviert — keine Audit-Logs fuer Benutzeraktionen", "status": "fail", "fix": "occ app:enable admin_audit"},
+        {"test": "Postgres Audit-Logging", "result": "log_statement NICHT auf 'ddl' oder 'mod' gesetzt — keine DDL/DML-Logs", "status": "fail", "fix": "ALTER SYSTEM SET log_statement = 'ddl'; SELECT pg_reload_conf();"},
+        {"test": "Traefik Access-Logs", "result": "Nicht explizit im Blueprint konfiguriert (Traefik static config nicht Teil des Deployments)", "status": "warning"},
+        {"test": "Log-Manipulationsschutz", "result": "Keine Massnahmen: Append-Only, zentraler Log-Server, oder Signatur nicht dokumentiert", "status": "warning"}
+      ],
+      "source": "docker-compose.yml logging-Sektionen, env.template, Ops-Agent O2_logging"
+    },
+    "E9_incident_detection": {
+      "pass": true,
+      "findings": [
+        {"test": "Healthcheck-Monitor", "result": "healthcheck-monitor.sh prueft docker inspect Health.Status fuer alle 3 Services", "status": "ok"},
+        {"test": "Healthchecks pro Service", "result": "Postgres: pg_isready (10s), Redis: redis-cli ping (10s), Nextcloud: curl /status.php (30s)", "status": "ok"},
+        {"test": "Alerting-Kanaele", "result": "Webhook (HEALTHCHECK_WEBHOOK) + E-Mail (ALERT_EMAIL) konfigurierbar via env vars", "status": "ok"},
+        {"test": "Cron-Ausfuehrung", "result": "In Blueprint-Assumptions referenziert (alle 5min), kein Cron-Datei-Artefakt im Blueprint", "status": "warning"},
+        {"test": "Alert-History", "result": "Keine Historie — kein Deployment-Zugriff / Monitor frisch eingerichtet", "status": "warning"},
+        {"test": "False-Positive-Rate", "result": "Nicht messbar ohne Betriebsdaten", "status": "warning"},
+        {"test": "depends_on condition", "result": "service_healthy mit Readiness-Gates fuer alle Dependencies", "status": "ok"}
+      ],
+      "source": "healthcheck-monitor.sh, docker-compose.yml healthchecks, blueprint assumptions"
+    },
+    "E10_business_continuity": {
+      "pass": false,
+      "findings": [
+        {"test": "DR-Test-Protokoll", "result": "NICHT vorhanden — kein durchgefuehrter Disaster-Recovery-Test dokumentiert", "status": "fail", "fix": "Quartalsweisen End-to-End-Restore-Test durchfuehren, protokollieren und Lessons-Learned dokumentieren"},
+        {"test": "Restore-End-to-End-Test", "result": "Nicht durchgefuehrt — Ops-Agent listet dies als next_action Priority 3", "status": "fail", "fix": "Restore-Test-Szenario definieren: DB-Wiederherstellung → Config-Restore → Funktionspruefung"},
+        {"test": "RTO-Messung", "result": "Keine Messung — RTO (Recovery Time Objective) nicht definiert oder getestet", "status": "fail", "fix": "RTO definieren (z.B. 4h) und im DR-Test messen"},
+        {"test": "RPO-Verifikation", "result": "Keine Messung — RPO (Recovery Point Objective) nicht definiert oder getestet", "status": "fail", "fix": "RPO definieren (z.B. 24h = taegliches Backup) und Datenverlust im Test quantifizieren"},
+        {"test": "Rollback-Prozedur (theoretisch)", "result": "5 dokumentierte Schritte (Stop → Restore → Config → Redeploy → Verify)", "status": "ok"},
+        {"test": "Backup-Ausloeser", "result": "Cron taeglich + Pre-Deploy-Snapshot automatisch", "status": "ok"}
+      ],
+      "source": "rollback_steps, backup.sh, ops-output.json next_actions Priority 3"
+    },
+    "E11_vulnerability_management": {
+      "pass": false,
+      "findings": [
+        {"test": "Image-Vulnerability-Scan", "result": "Kein Scan durchgefuehrt: docker scout/trivy Output nicht vorhanden", "status": "fail", "fix": "docker scout quickview oder trivy image fuer alle 3 Images ausfuehren und Report ablegen"},
+        {"test": "CVE-Dokumentation", "result": "Keine CVE-Liste mit Score >= 7 dokumentiert und bewertet", "status": "fail", "fix": "CVEs katalogisieren, Schweregrad bewerten, Ausnahmegenehmigungen dokumentieren"},
+        {"test": "Image-Aktualitaet (Patch-Status)", "result": "Image-Tags fixiert (31.0.2-apache, 16.6-alpine, 7.4-alpine) — keine automatischen Updates", "status": "warning"},
+        {"test": "EoL-Check (Images)", "result": "Keine dokumentierte Pruefung: Nextcloud 31 (Hub 9) aktiv supported, Postgres 16 EoL 2028-11, Redis 7 EoL ca. 2027", "status": "warning"},
+        {"test": "EoL-Check (OS)", "result": "Debian — keine spezifische Version dokumentiert, kein EoL-Datum vermerkt", "status": "warning"},
+        {"test": "Update-Strategie (Patches)", "result": "Patch-Updates via docker compose pull dokumentiert, aber kein Automatismus/Zeitplan", "status": "warning"}
+      ],
+      "source": "Kein Scan-Output vorhanden; update_strategy im blueprint-output.json"
+    },
+    "E12_compliance": {
+      "pass": false,
+      "findings": [
+        {"test": "Datenschutz-Folgeabschaetzung (DPIA)", "result": "NICHT vorhanden", "status": "fail", "fix": "DPIA fuer Nextcloud (Personendaten, Filehosting) erstellen"},
+        {"test": "AV-Vertraege (Unterauftragnehmer)", "result": "NICHT vorhanden — kein Auftragsverarbeitungsvertrag mit Hosting-Provider dokumentiert", "status": "fail", "fix": "AV-Vertrag mit Hosting-Provider (falls extern) und ggf. Subdienstleistern abschliessen"},
+        {"test": "Loeschkonzept", "result": "Nicht dokumentiert/getestet — occ user:delete-Prozedur nicht im Blueprint; Datenverbleib in Volumes ungeprueft", "status": "fail", "fix": "Loeschkonzept definieren: Benutzerdaten (DB) + Files (Volume) vollstaendig entfernen und Nachweis fuehren"},
+        {"test": "Lizenz-Report (Open Source)", "result": "Kein Lizenz-Scan (pip-licenses, npm-license-checker Aequivalent) — Nextcloud AGPLv3, Postgres PostgreSQL-Lizenz, Redis BSD-3-Clause nicht dokumentiert", "status": "warning"},
+        {"test": "Internes Audit-Protokoll (12 Monate)", "result": "Nicht vorhanden — kein vorheriger Audit-Zyklus dokumentiert (Erst-Audit)", "status": "fail", "fix": "Internes Audit-Programm definieren und jaehrlich durchfuehren"},
+        {"test": "Policy-Dokumentation", "result": "0 von 8 Policies vorhanden (Policy-Report Phase 5: Gesamtergebnis fail)", "status": "fail", "fix": "Alle 8 Policies (InfoSec, Access, Asset, Supplier, BC, Incident, Compliance, Crypto) erstellen"},
+        {"test": "Gap-Analyse", "result": "15 von 15 Gap-Kategorien (G1-G15) mit Luecken (Gap-Report Phase 4)", "status": "warning"}
+      ],
+      "source": "policy-report Phase 5, gap-report Phase 4, blueprint-output.json"
+    }
+  },
+  "non_conformities": [
+    {
+      "severity": "major",
+      "iso_control": "A.17.1.2",
+      "finding": "Kein DR-Test durchgefuehrt. Business-Continuity-Faehigkeit nicht nachgewiesen. Weder RTO noch RPO gemessen. Restore-End-to-End-Test fehlt.",
+      "evidence_missing": "DR-Test-Protokoll, RTO/RPO-Messungen, Restore-End-to-End-Ergebnis",
+      "fix": "Quartalsweisen DR-Test einplanen: DB-Wiederherstellung aus Backup → Config-Restore → Funktionspruefung → RTO/RPO dokumentieren",
+      "deadline": "2026-09-25"
+    },
+    {
+      "severity": "major",
+      "iso_control": "A.12.6.1",
+      "finding": "Keine Vulnerability-Scans der Container-Images durchgefuehrt. CVEs mit Score >= 7 weder identifiziert noch bewertet.",
+      "evidence_missing": "docker scout quickview / trivy image Scan-Report, CVE-Bewertung, Patch-Status-Dokumentation",
+      "fix": "Trivy oder Docker Scout Scan fuer alle 3 Images (nextcloud:31.0.2-apache, postgres:16.6-alpine, redis:7.4-alpine) durchfuehren und kritische CVEs dokumentieren/bewerten",
+      "deadline": "2026-07-15"
+    },
+    {
+      "severity": "major",
+      "iso_control": "A.18.1.1",
+      "finding": "Keine Compliance-Nachweise vorhanden: DPIA fehlt, AV-Vertraege fehlen, Loeschkonzept fehlt, Lizenz-Report fehlt. 0 von 8 Policies erstellt.",
+      "evidence_missing": "DPIA-Dokument, AV-Vertraege, Loeschkonzept, Lizenz-Report, Policy-Dokumente (InfoSec, Access, Asset, Supplier, BC, Incident, Compliance, Crypto)",
+      "fix": "DPIA erstellen, AV-Vertraege abschliessen, Loeschkonzept definieren und testen, Policy-Framework (8 Policies) aufbauen",
+      "deadline": "2026-09-25"
+    },
+    {
+      "severity": "major",
+      "iso_control": "A.9.4.2",
+      "finding": "Keine Multi-Faktor-Authentifizierung (MFA/2FA) konfiguriert und keine Passwort-Policy (Mindestlaenge, Komplexitaet) nachgewiesen.",
+      "evidence_missing": "MFA-Konfiguration (Keycloak OTP / Nextcloud twofactor_totp), Passwort-Policy-Definition",
+      "fix": "Keycloak OTP-Required-Action im Authentication-Flow aktivieren und Nextcloud twofactor_totp App installieren. Keycloak Realm Password Policy (min. 12 Zeichen) setzen.",
+      "deadline": "2026-07-15"
+    },
+    {
+      "severity": "minor",
+      "iso_control": "A.12.4.3",
+      "finding": "Kein Admin-Audit-Logging in Nextcloud aktiv. Benutzeraktionen (Login, Dateizugriff, Admin-Aenderungen) werden nicht protokolliert.",
+      "evidence_missing": "admin_audit App Status (aktiv/inaktiv)",
+      "fix": "occ app:enable admin_audit"
+    },
+    {
+      "severity": "minor",
+      "iso_control": "A.12.4.2",
+      "finding": "Postgres DDL-Logging nicht konfiguriert. Schema-Aenderungen werden nicht protokolliert.",
+      "evidence_missing": "log_statement = 'ddl' Konfiguration in postgresql.conf",
+      "fix": "ALTER SYSTEM SET log_statement = 'ddl'; SELECT pg_reload_conf();"
+    },
+    {
+      "severity": "minor",
+      "iso_control": "A.12.3.1",
+      "finding": "User-Daten (/var/www/html/data) nicht im Backup-Umfang enthalten. Backup sichert nur config und custom_apps, nicht die Benutzer-Files.",
+      "evidence_missing": "backup.sh enthaelt keinen data-Pfad; kein separates nextcloud-data Volume",
+      "fix": "backup.sh um /var/www/html/data erweitern oder separates Volume fuer Nutzdaten definieren und sichern"
+    }
+  ],
+  "observations": [
+    {"iso_control": "A.12.1.2", "note": "Deploy- und Rollback-Prozesse vollstaendig mit 8 idempotenten Schritten dokumentiert. Drift-Erkennung (taeglicher Cron-Diff) konfiguriert. Update-Strategie fuer Major- und Patch-Upgrades definiert. Git-History, Staging-Umgebung und formale Testprotokolle fehlen jedoch."},
+    {"iso_control": "A.16.1.1", "note": "Healthcheck-Monitor mit Webhook/Mail-Alerting konfiguriert. Alle 3 Services mit sinnvollen Healthchecks versehen. Alert-History noch nicht vorhanden (frisches Setup). False-Positive-Rate nicht bewertbar."},
+    {"iso_control": "A.12.1.3", "note": "Ressourcenlimits (CPU/Memory) fuer alle Services definiert und angemessen dimensioniert. Redis maxmemory-policy allkeys-lru gesetzt. Kapazitaetstrends und Volume-Groessen nicht ueberwacht — kein Monitoring-Dashboard."},
+    {"iso_control": "A.9.2.1", "note": "OIDC-Rollenexport via Keycloak Realm-Export nicht verfuegbar — Benutzer-und Rollenstruktur kann ohne Live-System-Zugriff nicht verifiziert werden. DB- und Redis-Zugangskontrollen sind dokumentiert."},
+    {"iso_control": "A.8.1.1", "note": "Asset-Inventar ist vollstaendig: 3 Container, 5 Volumes, 2 Netzwerke, 8 Config-Dateien, 6 Secrets-Referenzen. Alle Image-Tags fixiert und dokumentiert."},
+    {"iso_control": "A.10.1.1", "note": "Kryptographie-Konfiguration vorbildlich: TLS 1.2+ moderne Ciphers, HSTS Preload, sniStrict, Security-Headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy). ACME Let's Encrypt Production-CA."},
+    {"iso_control": "A.9.4.1", "note": "Passwort-Richtlinie und Rotation nicht dokumentiert. Kein zentrales Passwort-Management-Log. Secrets werden via ${VAR} referenziert, aber Lebenszyklus (Rotation, Deaktivierung) nicht definiert."}
+  ],
+  "audit_conclusion": "Setup weist 4 Major-Non-Conformities und 3 Minor-Non-Conformities auf. Major-NCs betreffen fehlende Compliance-Dokumentation (A.18.1.1), fehlenden DR-Test (A.17.1.2), fehlende Vulnerability-Scans (A.12.6.1) und fehlende MFA/Passwort-Policy (A.9.4.2). Minor-NCs betreffen fehlendes Audit-Logging (A.12.4) und unvollstaendiges Backup (A.12.3.1). Technische Basiskonfiguration (TLS, HSTS, Rate-Limiting, Secrets-Management, Healthchecks, Backup-Script) ist solide. Audit kann nicht bestanden werden, bis Major-NCs behoben sind. Empfohlen wird ein Folge-Audit nach 3 Monaten.",
+  "next_actions": [
+    {"priority": 1, "action": "Vulnerability-Scan (Trivy/Docker Scout) fuer alle 3 Container-Images durchfuehren und CVEs bewerten", "iso_control": "A.12.6.1"},
+    {"priority": 2, "action": "MFA aktivieren: Keycloak OTP + Nextcloud twofactor_totp App, Passwort-Policy definieren", "iso_control": "A.9.4.2"},
+    {"priority": 3, "action": "Policy-Framework aufbauen: InfoSec-, Access-, Asset-, Supplier-, BC-, Incident-, Compliance-, Crypto-Policy erstellen", "iso_control": "A.18.1.1"},
+    {"priority": 4, "action": "Quartalsweisen DR-Test mit RTO/RPO-Messung einplanen und durchfuehren", "iso_control": "A.17.1.2"},
+    {"priority": 5, "action": "DPIA fuer Nextcloud erstellen, AV-Vertraege abschliessen, Loeschkonzept definieren", "iso_control": "A.18.1.1"},
+    {"priority": 6, "action": "Nextcloud admin_audit App aktivieren (occ app:enable admin_audit)", "iso_control": "A.12.4.3"},
+    {"priority": 7, "action": "Postgres log_statement='ddl' setzen und pg_reload_conf durchfuehren", "iso_control": "A.12.4.2"},
+    {"priority": 8, "action": "backup.sh um /var/www/html/data erweitern oder separates Nutzdaten-Volume definieren", "iso_control": "A.12.3.1"}
+  ]
+}
