@@ -103,8 +103,41 @@
         "bash": { "*": "ask", "docker *": "allow", "git log*": "allow", "ls *": "allow", "cat *": "allow" },
         "grepp": "allow"
       }
+    },
+    "iso-generate-agent": {
+      "mode": "subagent",
+      "description": "ISO-Policy-Template-Generator — erstellt ausfuellbare Markdown-Vorlagen fuer alle 8 ISO27001-Policies aus Gap-Report + Setup-Daten. German-language.",
+      "prompt": "{file:./agents/iso-generate-agent.md}",
+      "hidden": true,
+      "permission": {
+        "edit": "allow",
+        "read": "allow",
+        "bash": "deny"
+      }
     }
   },
   "default_agent": "orchestrator",
-  "instructions": ["AGENTS.md"]
+  "instructions": ["AGENTS.md"],
+  "command": {
+    "setup": {
+      "template": "Starte die vollstaendige Setup-Pipeline (Phase 1-3) fuer $ARGUMENTS.\n\n1. Lies examples/$ARGUMENTS/input.json falls vorhanden. Falls nicht, frage nach Environment (OS, orchestator) und Frontdoor (typ, domains, TLS).\n2. Phase 1: Spec-Agent (Soll-Spezifikation)\n3. Gate 1: Spec validieren\n4. Phase 2: Blueprint-Agent (Compose/K8s-Manifests)\n5. Gate 2: Blueprint validieren\n6. Phase 3: Parallele Validierung (Validation + Security + Ops)\n7. Gate 3: Ergebnisse aggregieren und anzeigen\n\nSpeichere alle Outputs unter examples/$ARGUMENTS/.",
+      "description": "Setup-Pipeline: Spec → Blueprint → Validate (Phase 1-3)",
+      "agent": "orchestrator"
+    },
+    "iso": {
+      "template": "Starte die ISO27001-Pipeline (Phase 4-6) fuer das bereits validierte Setup von $ARGUMENTS.\n\n1. Phase 4: ISO-Gap-Agent (Lueckenanalyse, 15 Annex-A-Kategorien)\n2. Gate 4: Gap-Report validieren\n3. Phase 5: ISO-Policy-Agent (Dokumenten-Pruefung, 8 Policies)\n4. Gate 5: Policy-Report validieren\n5. Phase 6: ISO-Audit-Agent (Nachweise pruefen, 12 Evidence-Kategorien)\n6. Gate 6: Audit-Report erstellen und speichern\n\nNutze die vorhandenen Artefakte aus examples/$ARGUMENTS/. Speichere den Audit-Report unter examples/$ARGUMENTS/iso-audit-report.json.",
+      "description": "ISO27001-Pipeline: Gap → Policy → Audit (Phase 4-6)",
+      "agent": "orchestrator"
+    },
+    "validate": {
+      "template": "Nur Phase 3: Parallele Validierung fuer das Setup von $ARGUMENTS aus examples/$ARGUMENTS/ neu ausfuehren (ohne Spec/Blueprint neu zu erstellen).\n\nRufe gleichzeitig Validation-Agent, Security-Agent und Ops-Agent auf mit den vorhandenen Spec- und Blueprint-Outputs.",
+      "description": "Nur Validierung (Phase 3) auf bestehendem Setup wiederholen",
+      "agent": "orchestrator"
+    },
+    "iso-generate": {
+      "template": "Generiere Policy-Templates fuer $ARGUMENTS aus dem Gap-Report.\n\n1. Lies examples/$ARGUMENTS/spec-output.json und examples/$ARGUMENTS/blueprint-output.json\n2. Lies den Gap-Report (falls vorhanden) aus Phase 4\n3. Dispatche den iso-generate-agent mit allen Setup-Fakten\n4. Erstelle den Ordner examples/$ARGUMENTS/policies/\n5. Speichere alle 8 generierten Policy-Templates (.md) unter examples/$ARGUMENTS/policies/\n6. Zeige dem User: '8 Templates generiert. Bitte die [ ] Felder ausfuellen.'",
+      "description": "ISO-Policy-Templates aus Gap-Report generieren (8 Markdown-Dokumente)",
+      "agent": "orchestrator"
+    }
+  }
 }
