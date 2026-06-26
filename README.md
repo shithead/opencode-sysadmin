@@ -73,4 +73,4 @@ Die Pipeline unterstuetzt ISO27001-Zertifizierung in 3 Stufen:
 
 ## Lizenz
 
-MIT
+GPLv3 — siehe [LICENSE](LICENSE)
